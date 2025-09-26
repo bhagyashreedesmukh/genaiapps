@@ -1,114 +1,352 @@
+from utils.export_utils import export_to_docx, export_to_pdf
+from utils.file_utils import extract_text_from_file
 import streamlit as st
+import pandas as pd
+import altair as alt
+from PyPDF2 import PdfReader
 import openai
 import os
-import pandas as pd
-from PyPDF2 import PdfReader
 
-# Setup
-openai.api_key = os.getenv("OPENAI_API_KEY")
+from docx import Document
+from fpdf import FPDF
 
-st.set_page_config(page_title="GenAI Portfolio", layout="wide")
+def export_to_docx(filename, content, title="Report"):
+    """Save content to a Word document"""
+    doc = Document()
+    doc.add_heading(title, 0)
+    doc.add_paragraph(content)
+    doc.save(filename)
+    return filename
 
-st.title("🚀 Generative AI Use Case Portfolio")
-st.write("Explore 4 sample apps: Meeting Assistant, Requirement Translator, Feedback Analyzer, Regulatory Summarizer")
+def export_to_pdf(filename, content, title="Report"):
+    """Save content to a PDF file"""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.multi_cell(0, 10, title, align="C")
+    pdf.ln(10)
+    pdf.set_font("Arial", '', 12)
+    pdf.multi_cell(0, 10, content)
+    pdf.output(filename)
+    return filename
 
-# Sidebar navigation
-page = st.sidebar.radio(
-    "Choose a Use Case:",
-    [
-        "📋 Meeting Intelligence Assistant",
-        "📑 Requirement → User Story Translator",
-        "📊 Customer Feedback Analyzer",
-        "⚖️ Regulatory Change Summarizer"
-    ]
+from docx.shared import Pt
+from datetime import datetime
+
+def export_to_docx(filename, content_dict, title="Report", author="Analyst", logo_path=None):
+    """Save structured content to a Word document with a cover page"""
+    doc = Document()
+
+    # --- Cover Page ---
+    if logo_path:
+        doc.add_picture(logo_path, width=None)  # auto-scale logo
+    doc.add_heading(title, 0)
+    doc.add_paragraph(f"Author: {author}")
+    doc.add_paragraph(f"Date: {datetime.today().strftime('%Y-%m-%d')}")
+    doc.add_page_break()
+
+    # --- Content Sections ---
+    for section_title, section_body in content_dict.items():
+        doc.add_heading(section_title, level=1)
+        p = doc.add_paragraph(section_body)
+        p.style.font.size = Pt(11)
+        doc.add_paragraph("\n")
+
+    doc.save(filename)
+    return filename
+
+
+def export_to_pdf(filename, content_dict, title="Report", author="Analyst", logo_path=None):
+    """Save structured content to a PDF with a cover page"""
+    pdf = FPDF()
+    pdf.add_page()
+
+    # --- Cover Page ---
+    if logo_path:
+        pdf.image(logo_path, x=60, y=20, w=90)  # centered
+        pdf.ln(60)
+    pdf.set_font("Arial", 'B', 20)
+    pdf.cell(0, 10, title, ln=True, align="C")
+    pdf.set_font("Arial", '', 12)
+    pdf.cell(0, 10, f"Author: {author}", ln=True, align="C")
+    pdf.cell(0, 10, f"Date: {datetime.today().strftime('%Y-%m-%d')}", ln=True, align="C")
+    pdf.add_page()
+
+    # --- Content Sections ---
+    pdf.set_font("Arial", '', 12)
+    for section_title, section_body in content_dict.items():
+        pdf.set_font("Arial", 'B', 14)
+        pdf.multi_cell(0, 10, section_title)
+        pdf.set_font("Arial", '', 12)
+        pdf.multi_cell(0, 10, section_body)
+        pdf.ln(5)
+
+    pdf.output(filename)
+    return filename
+
+
+# --- Page Config ---
+st.set_page_config(
+    page_title="GenAI Portfolio",
+    page_icon="🤖",
+    layout="wide",
+    initial_sidebar_state="expanded",
+primaryColor = "#4B9CD3",
+backgroundColor = "#F8F9FA",
+secondaryBackgroundColor = "#FFFFFF",
+textColor = "#333333",
+font = "sans serif"
+
 )
 
-# ========== 1. Meeting Intelligence ==========
-if page == "📋 Meeting Intelligence Assistant":
+
+
+
+# --- Load API Key ---
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+def call_openai(prompt, max_tokens=300):
+    """Helper function to call OpenAI GPT model"""
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",  # use gpt-3.5-turbo if quota limited
+            messages=[{"role": "system", "content": "You are a helpful assistant."},
+                      {"role": "user", "content": prompt}],
+            max_tokens=max_tokens
+        )
+        return response.choices[0].message["content"].strip()
+    except Exception as e:
+        return f"⚠️ Error: {e}"
+
+# --- Sidebar ---
+st.sidebar.title("🚀 GenAI Portfolio")
+app_mode = st.sidebar.radio(
+    "Choose App",
+    [
+        "🏢 Meeting Intelligence Assistant",
+        "📑 Requirement → User Story Translator",
+        "📊 Customer Feedback Analyzer",
+        "⚖ Regulatory Change Summarizer"
+    ]
+)
+st.sidebar.markdown("---")
+st.sidebar.info("Built with Streamlit + OpenAI\n\n**Author:** Bhagyashree Deshmukh")
+
+# --- Main Title ---
+st.title("🤖 Generative AI Portfolio")
+st.write("Showcasing practical AI use cases for Business Analysis & Product Ownership.")
+
+# --- Meeting Intelligence Assistant ---
+if app_mode == "🏢 Meeting Intelligence Assistant":
     st.header("📋 Meeting Intelligence Assistant")
-    audio_file = st.file_uploader("Upload Meeting Audio (MP3/WAV)", type=["mp3", "wav"])
+    uploaded_audio = st.file_uploader("Upload meeting audio (mp3, wav, m4a)", type=["mp3", "wav", "m4a"])
 
-    if audio_file:
-        st.info("Transcribing audio...")
-        transcript = openai.Audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file
-        )
-        st.success("Transcription complete ✅")
+    if uploaded_audio:
+        progress = st.progress(0)
+        status = st.empty()
 
-        st.info("Generating meeting summary...")
-        prompt = f"Summarize this meeting into key points, decisions, and action items:\n{transcript['text']}"
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        summary = response.choices[0].message["content"]
+        # Step 1: Transcription
+        status.text("Step 1/3: Transcribing audio...")
+        text = transcribe_audio(uploaded_audio)
+        progress.progress(33)
 
-        st.subheader("Meeting Summary")
+        # Step 2: Summarization
+        status.text("Step 2/3: Summarizing meeting...")
+        summary = call_openai(f"Summarize this meeting:\n\n{text}", max_tokens=200)
+        progress.progress(66)
+
+        # Step 3: Action items
+        status.text("Step 3/3: Extracting action items...")
+        actions = call_openai(f"Extract action items from this meeting:\n\n{text}", max_tokens=150)
+        progress.progress(100)
+
+        status.text("✅ Done! Meeting processed successfully.")
+
+        st.subheader("✨ Summary")
         st.write(summary)
+        st.subheader("📝 Action Items")
+        st.write(actions)
 
-# ========== 2. Requirement Translator ==========
-elif page == "📑 Requirement → User Story Translator":
+        with st.expander("📄 Transcript"):
+            st.write(text)
+
+        # --- Export ---
+        #export_text = f"📋 Meeting Summary\n\n{summary}\n\n📝 Action Items\n\n{actions}\n\n---\nTranscript:\n{text}"
+report_content = {
+            "📋 Meeting Summary": summary,
+            "📝 Action Items": actions,
+            "📄 Transcript": text
+}
+        # Export DOCX
+docx_file = "meeting_report.docx"
+export_to_docx(docx_file, report_content, title="Meeting Report", author="Bhagyashree Deshmukh")
+with open(docx_file, "rb") as f:
+            st.download_button("⬇️ Download Word Report", f, file_name=docx_file, mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+        # Export PDF
+pdf_file = "meeting_report.pdf"
+export_to_pdf(pdf_file, report_content, title="Meeting Report", author="Bhagyashree Deshmukh")
+with open(pdf_file, "rb") as f:
+            st.download_button("⬇️ Download PDF Report", f, file_name=pdf_file, mime="application/pdf")
+
+# --- Requirement → User Story Translator ---
+
+elif app_mode == "📑 Requirement → User Story Translator":
     st.header("📑 Requirement → User Story Translator")
-    uploaded_file = st.file_uploader("Upload BRD (PDF)", type=["pdf"])
+    uploaded_req = st.file_uploader("Upload requirements (PDF, Word, or Excel)", type=["pdf", "docx", "xlsx"])
 
-    if uploaded_file:
-        reader = PdfReader(uploaded_file)
-        text = " ".join([page.extract_text() for page in reader.pages])
+    if uploaded_req:
+        progress = st.progress(0)
+        status = st.empty()
 
-        st.info("Generating User Stories...")
-        prompt = f"Convert the following requirements into Agile user stories with acceptance criteria:\n{text}"
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
+        # Step 1: Extract text
+        status.text("Step 1/2: Extracting text from document...")
+        text = extract_text_from_file(uploaded_req)
+        progress.progress(50)
+
+        # Step 2: Translate into user stories
+        status.text("Step 2/2: Translating requirements into user stories...")
+        stories = call_openai(
+            f"Convert the following requirements into Agile user stories with acceptance criteria:\n\n{text}",
+            max_tokens=300
         )
-        stories = response.choices[0].message["content"]
+        progress.progress(100)
 
-        st.subheader("Generated User Stories")
+        status.text("✅ Done! Requirements converted into user stories.")
+
+        st.subheader("📌 User Stories")
         st.write(stories)
 
-# ========== 3. Feedback Analyzer ==========
-elif page == "📊 Customer Feedback Analyzer":
+        # --- Export ---
+        #export_text = f"📑 User Stories\n\n{stories}"
+report_content = {
+            "📑 User Stories": stories
+        }
+        # Export DOCX
+        docx_file = "user_stories.docx"
+        export_to_docx(docx_file, report_content, title="User Stories",author="Bhagyashree Deshmukh")
+        with open(docx_file, "rb") as f:
+            st.download_button("⬇️ Download Word User Stories", f, file_name=docx_file, mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+        # Export PDF
+        pdf_file = "user_stories.pdf"
+        export_to_pdf(pdf_file, report_content, title="User Stories",author="Bhagyashree Deshmukh")
+        with open(pdf_file, "rb") as f:
+            st.download_button("⬇️ Download PDF User Stories", f, file_name=pdf_file, mime="application/pdf")
+
+# --- Customer Feedback Analyzer ---
+elif app_mode == "📊 Customer Feedback Analyzer":
     st.header("📊 Customer Feedback Analyzer")
-    file = st.file_uploader("Upload CSV with feedback column", type=["csv"])
+    uploaded_csv = st.file_uploader("Upload CSV (must contain a 'feedback' column)", type=["csv"])
 
-    if file:
-        df = pd.read_csv(file)
-        feedback_col = st.selectbox("Select Feedback Column", df.columns)
+    if uploaded_csv:
+        df = pd.read_csv(uploaded_csv)
+        st.write("📄 Sample Data", df.head())
 
-        results = []
-        for fb in df[feedback_col].dropna().head(10):  # limit to 10 for demo
-            prompt = f"Analyze the sentiment (Positive, Neutral, Negative) and main theme for this feedback:\n{fb}"
-            response = openai.ChatCompletion.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}]
-            )
-            results.append(response.choices[0].message["content"])
+        progress = st.progress(0)
+        status = st.empty()
 
-        st.subheader("Sample Analysis (10 rows)")
-        for r in results:
-            st.write("- ", r)
+        # Step 1: Combine all feedback
+        status.text("Step 1/3: Preparing feedback data...")
+        all_feedback = " ".join(df["feedback"].astype(str).tolist())
+        progress.progress(33)
 
-# ========== 4. Regulatory Summarizer ==========
-elif page == "⚖️ Regulatory Change Summarizer":
-    st.header("⚖️ Regulatory Change Summarizer")
-    uploaded_file = st.file_uploader("Upload Regulatory Document (PDF)", type=["pdf"])
+        # Step 2: Sentiment analysis
+        status.text("Step 2/3: Analyzing sentiment distribution...")
+        sentiment = call_openai(f"Analyze sentiment distribution (Positive, Neutral, Negative) of this feedback:\n\n{all_feedback}")
+        progress.progress(66)
 
-    if uploaded_file:
-        reader = PdfReader(uploaded_file)
-        text = " ".join([page.extract_text() for page in reader.pages[:5]])  # first 5 pages only
+        # Step 3: Identify themes
+        status.text("Step 3/3: Identifying key themes...")
+        themes = call_openai(f"Identify top 3 recurring themes in this customer feedback:\n\n{all_feedback}")
+        progress.progress(100)
 
-        st.info("Summarizing...")
-        prompt = f"""
-        Summarize this regulatory document in plain English.
-        Highlight key changes, impacted business processes, and compliance actions required.
-        \n{text}
-        """
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        summary = response.choices[0].message["content"]
+        status.text("✅ Done! Feedback analysis complete.")
 
-        st.subheader("Summary & Impact")
+        # --- Display Results ---
+        st.subheader("📊 Sentiment Analysis")
+        st.write(sentiment)
+
+        st.subheader("✨ Key Themes")
+        st.write(themes)
+
+        # Optional: Dummy chart (replace with actual sentiment extraction later)
+        chart_data = pd.DataFrame({
+            "Sentiment": ["Positive", "Neutral", "Negative"],
+            "Count": [45, 20, 10]
+        })
+        chart = alt.Chart(chart_data).mark_bar().encode(x="Sentiment", y="Count", color="Sentiment")
+        st.altair_chart(chart, use_container_width=True)
+
+        # --- Export ---
+        #export_text = f"📊 Sentiment Analysis\n\n{sentiment}\n\n✨ Key Themes\n\n{themes}"
+report_content = {
+            "📊 Sentiment Analysis": sentiment,
+            "✨ Key Themes": themes
+        }
+        
+        # Export DOCX
+        docx_file = "customer_feedback.docx"
+        export_to_docx(docx_file, export_text, title="Customer Feedback Analysis",author="Bhagyashree Deshmukh")
+        with open(docx_file, "rb") as f:
+            st.download_button("⬇️ Download Word Report", f, file_name=docx_file, mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+        # Export PDF
+        pdf_file = "customer_feedback.pdf"
+        export_to_pdf(pdf_file, export_text, title="Customer Feedback Analysis",author="Bhagyashree Deshmukh")
+        with open(pdf_file, "rb") as f:
+            st.download_button("⬇️ Download PDF Report", f, file_name=pdf_file, mime="application/pdf")
+
+# --- Regulatory Change Summarizer ---
+elif app_mode == "⚖ Regulatory Change Summarizer":
+    st.header("⚖ Regulatory Change Summarizer")
+    uploaded_pdf = st.file_uploader("Upload regulatory PDF", type=["pdf"])
+
+    if uploaded_pdf:
+        progress = st.progress(0)
+        status = st.empty()
+
+        # Step 1: Extract text
+        status.text("Step 1/3: Extracting regulation text...")
+        reader = PdfReader(uploaded_pdf)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text()
+        progress.progress(33)
+
+        # Step 2: Summarize regulation
+        status.text("Step 2/3: Summarizing regulation...")
+        summary = call_openai(f"Summarize this regulation in simple business terms:\n\n{text}", max_tokens=250)
+        progress.progress(66)
+
+        # Step 3: Business impact analysis
+        status.text("Step 3/3: Identifying business impacts...")
+        impact = call_openai(f"What are the business and compliance impacts of this regulation?\n\n{text}", max_tokens=250)
+        progress.progress(100)
+
+        status.text("✅ Done! Regulation analyzed successfully.")
+
+        # --- Display Results ---
+        st.subheader("📌 Summary")
         st.write(summary)
+
+        st.subheader("💡 Business Impact")
+        st.write(impact)
+
+        # --- Export ---
+        #export_text = f"⚖ Regulatory Change Summary\n\n📌 Summary\n{summary}\n\n💡 Business Impact\n{impact}"
+report_content = {
+            "📌 Summary": summary,
+            "💡 Business Impact": impact
+        }
+        # Export DOCX
+        docx_file = "regulatory_summary.docx"
+        export_to_docx(docx_file, report_content, title="Regulatory Change Summary",author="Bhagyashree Deshmukh")
+        with open(docx_file, "rb") as f:
+            st.download_button("⬇️ Download Word Report", f, file_name=docx_file, mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+        # Export PDF
+        pdf_file = "regulatory_summary.pdf"
+        export_to_pdf(pdf_file, report_content, title="Regulatory Change Summary",author="Bhagyashree Deshmukh")
+        with open(pdf_file, "rb") as f:
+            st.download_button("⬇️ Download PDF Report", f, file_name=pdf_file, mime="application/pdf")
