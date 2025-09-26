@@ -44,3 +44,13 @@ Each app is built in **Python + Streamlit** and demonstrates how AI can accelera
    ```bash
    git clone https://github.com/your-username/genai-portfolio.git
    cd genai-portfolio
+---
+## 📂 Repository Structure
+genai-portfolio/
+│── app.py                # Main Streamlit app
+│── requirements.txt       # Dependencies
+│── README.md              # Documentation
+│
+├── utils/                 # Helper scripts
+├── samples/               # Example input files
+└── outputs/               # Example generated reports
